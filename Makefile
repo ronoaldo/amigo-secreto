@@ -44,6 +44,8 @@ deploy: $(ZIP)
 			--statement-id url ; \
 		$(AWS) lambda create-function-url-config --function-name $(FN) --auth-type NONE ; \
 	fi
+	echo "Function deployed at: "
+	$(AWS) lambda get-function-url-config --function-name $(FN) --query FunctionUrl
 
 undeploy:
 	$(AWS) lambda delete-function-url-config --function-name $(FN) || echo "Not deployed"

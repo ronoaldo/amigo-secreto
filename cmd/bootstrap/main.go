@@ -6,5 +6,5 @@ import (
 )
 
 func main() {
-	lambda.Start(amigosecreto.Health)
+	lambda.Start(amigosecreto.Handler)
 }
