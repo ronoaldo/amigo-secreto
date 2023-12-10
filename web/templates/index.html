@@ -1,0 +1,34 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Amigo Secreto</title>
+        
+        <!-- Minified version -->
+        <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
+    </head>
+    <body>
+        <header>
+            <h1>Grupo: {{.grupo}}</h1>
+        </header>
+
+        <main>
+            Amigos:
+            <ul>
+            {{ range .amigosecreto.Amigos }}
+                <li>{{.}}</li>
+            {{ end }}
+            </ul>
+
+            Ações:
+            <ul>
+                {{ if gt (len .amigosecreto.Sorteio) 0 }}
+                <li><a href="?acao=sortear&grupo={{.grupo}}">Sortear Novamente!</a></li>
+                {{ else }}
+                <li><a href="?acao=sortear&grupo={{.grupo}}">Realizar sorteio</a></li>
+                {{ end }}
+                <li><a href="?acao=gerar-links&grupo={{.grupo}}">Ver links para compartilhar</a></li>
+            </ul>
+        </main>
+    </body>
+</html>

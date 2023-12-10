@@ -1,0 +1,24 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Amigo Secreto</title>
+        
+        <!-- Minified version -->
+        <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
+    <body>
+        <header>
+            <h1>Não abra os links! Vai estragar a surpresa!</h1>
+        </header>
+        
+        <main>
+            {{ range .links }}
+            <hr>
+            <p>
+                Olá! {{.Amigo}}! Abra o link abaixo para ver quem é seu amigo secreto:
+                <a href="{{ .Link }}">{{.Link}}</a>
+            </p>
+            {{ end }}
+        </main>
+    </body>
+</html>

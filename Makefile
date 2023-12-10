@@ -8,7 +8,7 @@ GOARCH=amd64
 LAMBDA_ARCH=$(if eq GOARCH "amd64", x86_64, amr64)
 
 # Source/dest
-SRC=$(shell find ./ -iname '*.go')
+SRC=$(shell find ./ -iname '*.go' -o -iname '*.html')
 PROG=bootstrap
 ZIP=amigo-secreto-lambda.zip
 
@@ -27,7 +27,7 @@ test:
 
 package: $(ZIP)
 $(ZIP): $(PROG)
-	[ -f $(ZIP) ] && rm -rf $(ZIP)
+	[ -f $(ZIP) ] && rm -rf $(ZIP) || true
 	zip $(ZIP) $(PROG)
 
 deploy: $(ZIP)

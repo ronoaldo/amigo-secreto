@@ -5,11 +5,12 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"html/template"
 	"io"
 	"log"
 	"math/rand"
+	"net/url"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -25,7 +26,7 @@ var TableName = "GrupoAmigoSecreto"
 func Handler(ctx context.Context, req events.APIGatewayProxyRequest) (resp events.APIGatewayProxyResponse, err error) {
 	log.Printf("Received: %#v", req)
 	if req.QueryStringParameters == nil {
-		errorf(&resp, "missing arguments grupo action")
+		errorf(&resp, "missing arguments grupo")
 		return resp, nil
 	}
 
@@ -38,29 +39,25 @@ func Handler(ctx context.Context, req events.APIGatewayProxyRequest) (resp event
 	body := strings.Builder{}
 	url := fmt.Sprintf("https://%s", req.RequestContext.DomainName)
 	resp.Headers = map[string]string{
-		"content-type": "text/plain",
+		"content-type": "text/html; charset=utf-8",
 	}
 
 	log.Printf("Processando: grupo=%s, acao=%s\n", grupo, acao)
 	switch acao {
 	case "sortear":
-		if err := Sortear(grupo, &body, url); err != nil {
-			errorf(&resp, "erro ao sortear: %v", err)
-			return resp, nil
-		}
+		err = Sortear(&body, grupo, url)
 	case "gerar-links":
-		if err := GerarLinks(grupo, &body, url); err != nil {
-			errorf(&resp, "erro ao gerar links: %v", err)
-			return resp, nil
-		}
+		err = GerarLinks(&body, grupo, url)
 	case "ver-amigo":
-		if err := VerMeuAmigoSecreto(quemSou, grupo, chave, &body); err != nil {
-			errorf(&resp, "erro ao ver amigo: %v", err)
-			return resp, nil
-		}
-		resp.Headers["content-type"] = "text/html; charset=utf-8"
+		err = VerMeuAmigoSecreto(&body, quemSou, grupo, chave)
+	default:
+		err = Index(&body, grupo)
 	}
 
+	if err != nil {
+		errorf(&resp, "erro ao %s: %v", acao, err)
+		return resp, nil
+	}
 	resp.Body = body.String()
 	return
 }
@@ -78,12 +75,20 @@ type AmigoSecreto struct {
 	Seed    int64             `dynamodbav:"seed"`
 }
 
-const tmplAmigoSorteado = `<html>
-<h2>{{.quemSou}}, seu amigo(a) secreto(a) é ...</h2>
-<h1>{{.amigo}}</h1>
-</html>`
+func Index(w io.Writer, grupo string) error {
+	svc := connectar()
+	amigosecreto, err := carregar(svc, grupo)
+	if err != nil {
+		return err
+	}
 
-func VerMeuAmigoSecreto(quemSou, grupo, chave string, body io.Writer) error {
+	return show(w, TemplateIndex, map[string]interface{}{
+		"amigosecreto": amigosecreto,
+		"grupo":        grupo,
+	})
+}
+
+func VerMeuAmigoSecreto(w io.Writer, quemSou, grupo, chave string) error {
 	svc := connectar()
 	amigosecreto, err := carregar(svc, grupo)
 	if err != nil {
@@ -99,28 +104,39 @@ func VerMeuAmigoSecreto(quemSou, grupo, chave string, body io.Writer) error {
 
 	// Exibe quem é seu amigo secreto!
 	meuAmigo := amigosecreto.Sorteio[quemSou]
-	tpl := template.Must(template.New("amigo-secreto").Parse(tmplAmigoSorteado))
-	return tpl.Execute(body, map[string]string{
+	return show(w, TemplateAmigo, map[string]interface{}{
 		"quemSou": quemSou,
 		"amigo":   meuAmigo,
 	})
 }
 
-func GerarLinks(grupo string, body *strings.Builder, url string) error {
+type Link struct {
+	Amigo string
+	Link  string
+}
+
+func GerarLinks(w io.Writer, grupo string, url string) error {
 	svc := connectar()
 	amigosecreto, err := carregar(svc, grupo)
 	if err != nil {
 		return err
 	}
+	links := make([]Link, 0)
 	// Gera os links para o resultado
 	for amigo := range amigosecreto.Sorteio {
-		fmt.Fprintf(body, "Amigo: %v, Ver Resultado: %s", amigo, linkVerAmigo(amigo, grupo, url, amigosecreto.Seed))
+		link := linkVerAmigo(amigo, grupo, url, amigosecreto.Seed)
+		links = append(links, Link{
+			Amigo: amigo,
+			Link:  link,
+		})
 	}
-	return nil
+	return show(w, TemplateLinks, map[string]interface{}{
+		"links": links,
+	})
 }
 
 // Sortear o amigo secreto utilizando os nomes dos participantes cadastrados
-func Sortear(grupo string, body *strings.Builder, url string) error {
+func Sortear(w io.Writer, grupo string, url string) error {
 	// Cria um cliente DynamoDB
 	svc := connectar()
 
@@ -153,9 +169,7 @@ func Sortear(grupo string, body *strings.Builder, url string) error {
 	log.Printf("amigosecreto=%#v", amigosecreto)
 
 	// Gera os links para o resultado
-	for amigo := range amigosecreto.Sorteio {
-		fmt.Fprintf(body, "Amigo: %v, Ver Resultado: %s", amigo, linkVerAmigo(amigo, grupo, url, amigosecreto.Seed))
-	}
+	fmt.Fprintf(w, "Sorteio realizado! <a href=%s/?grupo=%s>Voltar</a>", url, grupo)
 
 	// Atualiza o item na base de dados
 	err = salvar(svc, amigosecreto)
@@ -209,7 +223,13 @@ func criaChaveSecreta(amigo, grupo string, seed int64) string {
 	return fmt.Sprintf("%x", sum)
 }
 
-func linkVerAmigo(amigo, grupo string, url string, seed int64) string {
+func linkVerAmigo(amigo, grupo string, baseUrl string, seed int64) string {
 	chave := criaChaveSecreta(amigo, grupo, seed)
-	return fmt.Sprintf("%s/?acao=ver-amigo&quem-sou=%s&grupo=%s&chave=%v\n", url, amigo, grupo, chave)
+	e := url.QueryEscape
+	return fmt.Sprintf("%s/?acao=ver-amigo&quem-sou=%s&grupo=%s&chave=%v\n", baseUrl, e(amigo), e(grupo), e(chave))
+}
+
+func show(body io.Writer, html string, context map[string]interface{}) error {
+	tpl := template.Must(template.New("template").Parse(html))
+	return tpl.Execute(body, context)
 }
